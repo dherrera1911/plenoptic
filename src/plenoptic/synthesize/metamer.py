@@ -24,6 +24,10 @@ from ..tools.validate import validate_coarse_to_fine, validate_input, validate_m
 from .synthesis import OptimizedSynthesis
 
 
+def _penalize_range(metamer: Tensor) -> Tensor:
+    return optim.penalize_range(metamer, allowed_range=(0, 1))
+
+
 class Metamer(OptimizedSynthesis):
     r"""
     Synthesize metamers for image-computable differentiable models.
@@ -42,6 +46,11 @@ class Metamer(OptimizedSynthesis):
     loss_function
         The loss function to use to compare the representations of the models
         in order to determine their loss.
+    regularization
+        A regularization function to help constrain the synthesized
+        image by penalizing specific image properties.
+    regularization_lambda
+        Strength of the regularizer. Must be non-negative.
     range_penalty_lambda
         Strength of the regularizer that enforces the allowed_range. Must be
         non-negative.
@@ -63,10 +72,12 @@ class Metamer(OptimizedSynthesis):
         image: Tensor,
         model: torch.nn.Module,
         loss_function: Callable[[Tensor, Tensor], Tensor] = optim.mse,
+        regularization: Callable[[Tensor], Tensor] = _penalize_range,
+        regularization_lambda: float = 0.1,
         range_penalty_lambda: float = 0.1,
         allowed_range: tuple[float, float] = (0, 1),
     ):
-        super().__init__(range_penalty_lambda, allowed_range)
+        super().__init__(regularization, regularization_lambda)
         validate_input(image, allowed_range=allowed_range)
         validate_model(
             model,
@@ -190,9 +201,6 @@ class Metamer(OptimizedSynthesis):
         if self._metamer is None:
             if initial_image is None:
                 metamer = torch.rand_like(self.image)
-                # rescale metamer to lie within the interval
-                # self.allowed_range
-                metamer = signal.rescale(metamer, *self.allowed_range)
             else:
                 validate_input(initial_image, allowed_range=self.allowed_range)
                 if initial_image.size() != self.image.size():
@@ -317,8 +325,9 @@ class Metamer(OptimizedSynthesis):
         if target_representation is None:
             target_representation = self.target_representation
         loss = self.loss_function(metamer_representation, target_representation)
-        range_penalty = optim.penalize_range(self.metamer, self.allowed_range)
-        return loss + self.range_penalty_lambda * range_penalty
+        #range_penalty = optim.penalize_range(self.metamer, self.allowed_range)
+        regularization_penalty = self.regularization(self.metamer)
+        return loss + self.regularization_lambda * regularization_penalty
 
     def _optimizer_step(self, pbar: tqdm) -> Tensor:
         r"""
@@ -726,6 +735,11 @@ class MetamerCTF(Metamer):
     loss_function
         The loss function to use to compare the representations of the models
         in order to determine their loss.
+    regularization
+        A regularization function to help constrain the synthesized
+        image by penalizing specific image properties.
+    regularization_lambda
+        Strength of the regularizer. Must be non-negative.
     range_penalty_lambda
         Strength of the regularizer that enforces the allowed_range. Must be
         non-negative.
@@ -756,6 +770,8 @@ class MetamerCTF(Metamer):
         image: Tensor,
         model: torch.nn.Module,
         loss_function: Callable[[Tensor, Tensor], Tensor] = optim.mse,
+        regularization: Callable[[Tensor], Tensor] = _penalize_range,
+        regularization_lambda: float = 0.1,
         range_penalty_lambda: float = 0.1,
         allowed_range: tuple[float, float] = (0, 1),
         coarse_to_fine: Literal["together", "separate"] = "together",
@@ -764,8 +780,8 @@ class MetamerCTF(Metamer):
             image,
             model,
             loss_function,
-            range_penalty_lambda,
-            allowed_range,
+            regularization,
+            regularization_lambda,
         )
         self._init_ctf(coarse_to_fine)
 

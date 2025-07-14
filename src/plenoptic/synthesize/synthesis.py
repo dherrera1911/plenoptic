@@ -9,6 +9,7 @@ import abc
 import importlib
 import inspect
 import warnings
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -16,6 +17,10 @@ import torch
 
 from ..tools import examine_saved_synthesis
 from ..tools.data import _check_tensor_equality
+
+
+def _penalize_range(metamer: torch.Tensor) -> torch.Tensor:
+    return torch.tensor(0.0)
 
 
 def _get_name(x: object) -> str:
@@ -464,12 +469,19 @@ class OptimizedSynthesis(Synthesis):
     allowed_range
         Range (inclusive) of allowed pixel values. Any values outside this
         range will be penalized.
+    regularization
+        A regularization function to help constrain the synthesized
+        image by penalizing specific image properties.
+    regularization_lambda
+        Strength of the regularizer. Must be non-negative.
     """
 
     def __init__(
         self,
         range_penalty_lambda: float = 0.1,
         allowed_range: tuple[float, float] = (0, 1),
+        regularization: Callable[[torch.Tensor], torch.Tensor] = _penalize_range,
+        regularization_lambda: float = 0.1,
     ):
         super().__init__()
         self._losses = []
@@ -477,8 +489,12 @@ class OptimizedSynthesis(Synthesis):
         self._pixel_change_norm = []
         self._store_progress = None
         self._optimizer = None
-        if range_penalty_lambda < 0:
-            raise Exception("range_penalty_lambda must be non-negative!")
+        self.regularization = regularization
+        #if range_penalty_lambda < 0:
+        #    raise Exception("range_penalty_lambda must be non-negative!")
+        if regularization_lambda < 0:
+            raise Exception("regularization_lambda must be non-negative!")
+        self._regularization_lambda = regularization_lambda
         self._range_penalty_lambda = range_penalty_lambda
         self._allowed_range = allowed_range
 
@@ -711,6 +727,12 @@ class OptimizedSynthesis(Synthesis):
                 if len(step_args - {"self", "epoch"}):
                     # then we do want to pass the loss to scheduler.step
                     self._scheduler_step_arg = True
+
+    @property
+    def regularization_lambda(self) -> float:
+        """Magnitude of the regularization weight."""
+        # numpydoc ignore=RT01,ES01
+        return self._regularization_lambda
 
     @property
     def range_penalty_lambda(self) -> float:

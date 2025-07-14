@@ -18,14 +18,10 @@ import torch
 from torch import Tensor
 from tqdm.auto import tqdm
 
-from ..tools import data, display, optim, signal
+from ..tools import data, display, optim, regularization, signal
 from ..tools.convergence import coarse_to_fine_enough, loss_convergence
 from ..tools.validate import validate_coarse_to_fine, validate_input, validate_model
 from .synthesis import OptimizedSynthesis
-
-
-def _penalize_range(metamer: Tensor) -> Tensor:
-    return optim.penalize_range(metamer, allowed_range=(0, 1))
 
 
 class Metamer(OptimizedSynthesis):
@@ -72,7 +68,7 @@ class Metamer(OptimizedSynthesis):
         image: Tensor,
         model: torch.nn.Module,
         loss_function: Callable[[Tensor, Tensor], Tensor] = optim.mse,
-        penalty_function: Callable[[Tensor], Tensor] = _penalize_range,
+        penalty_function: Callable[[Tensor], Tensor] = regularization.penalize_range,
         penalty_lambda: float = 0.1,
         range_penalty_lambda: float = 0.1,
         allowed_range: tuple[float, float] = (0, 1),
@@ -329,7 +325,6 @@ class Metamer(OptimizedSynthesis):
         if target_representation is None:
             target_representation = self.target_representation
         loss = self.loss_function(metamer_representation, target_representation)
-        #range_penalty = optim.penalize_range(self.metamer, self.allowed_range)
         penalty = self.penalty_function(self.metamer)
         return loss + self.penalty_lambda * penalty
 
@@ -774,7 +769,7 @@ class MetamerCTF(Metamer):
         image: Tensor,
         model: torch.nn.Module,
         loss_function: Callable[[Tensor, Tensor], Tensor] = optim.mse,
-        penalty_function: Callable[[Tensor], Tensor] = _penalize_range,
+        penalty_function: Callable[[Tensor], Tensor] = regularization.penalize_range,
         penalty_lambda: float = 0.1,
         range_penalty_lambda: float = 0.1,
         allowed_range: tuple[float, float] = (0, 1),
